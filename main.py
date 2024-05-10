@@ -6,6 +6,8 @@ import time
 import torch
 import uvicorn
 from ultralytics import YOLO
+
+## windows
 # import pathlib
 # from pathlib import Path
 # pathlib.PosixPath = pathlib.WindowsPath
@@ -22,10 +24,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# device = '0' if torch.cuda.is_available() else 'cpu'
-# path = Path('models/infusion.pt')
-# model = torch.hub.load('Ultralytics/yolov5', 'custom', path=path, device=device, force_reload=True)
 
 model = YOLO("models/infusion-drop.pt")
 
@@ -50,11 +48,6 @@ def detect_drops(frame):
             'class_name': model.names[int(class_id)]
         })
     return detections
-
-
-    # results = model(frame)
-    # detections = results.xyxy[0]
-    # return detections
 
 def count_total_drops(frame):
     detections = detect_drops(frame)
