@@ -1,22 +1,14 @@
-from flask import Flask, render_template, Response, stream_with_context, request, jsonify
+from flask import Flask, render_template, Response, jsonify, request
 from flask_cors import CORS
 import cv2
 import time
 from ultralytics import YOLO
-import torch
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 CORS(app)
 
-# setup gpu
-# device = '1' if torch.cuda.is_available() else 'cpu'
-# if device == '1':
-#     torch.cuda.set_device(1)
-
-# print('device:', device)
-
-# load model and class
-model = YOLO("models/infusion-drop.pt")
+# Load YOLO model outside the main Flask context
+yolo_model = YOLO("models/infusion-drop.pt")
 class_name = ["drop"]
 confidence = 0.5
 
@@ -26,9 +18,8 @@ total_drops = 0
 drops_in_one_minute = 0
 start_time = time.time()
 
-
 def detect_drops(frame):
-    results = model.predict(frame)[0]
+    results = yolo_model.predict(frame)[0]
     detections = []
     for result in results.boxes:
         x1, y1, x2, y2 = result.xyxy[0]
@@ -39,18 +30,14 @@ def detect_drops(frame):
             'x2': int(x2),'y2': int(y2),
             'confidence': float(confidence),
             'class_id': int(class_id),
-            'class_name': model.names[int(class_id)]
+            'class_name': yolo_model.names[int(class_id)]
         })
     return detections
 
-def count_total_drops(frame):
-    detections = detect_drops(frame)
-    return len(detections)
-
 def process_frame(frame):
-    global total_drops, last_drop_time, drops_in_one_minute, start_time
+    global total_drops, drops_in_one_minute, start_time
 
-    drop_count = count_total_drops(frame)
+    drop_count = len(detect_drops(frame))
     total_drops += drop_count
 
     current_time = time.time()
@@ -95,32 +82,20 @@ def video_feed():
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + cv2.imencode('.jpg', frame)[1].tobytes() + b'\r\n')
 
-    return Response(stream_with_context(generate_frames()), mimetype='multipart/x-mixed-replace; boundary=frame')
-
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route("/stop_camera", methods=["POST"])
-def stop_detection():
+def stop_camera():
     global video_capture
-
     if video_capture is not None:
         video_capture.release()
         cv2.destroyAllWindows() 
         video_capture = None
-
-    global total_drops, drops_in_one_minute, start_time
-    total_drops = 0
-    drops_in_one_minute = 0
-    start_time = time.time()
-
-    return jsonify({"message": "Object detection and camera stopped."})
-
-# cv2.destroyAllWindows() 
-
+    return jsonify({"message": "Camera stopped."})
 
 @app.route("/drop_stats", methods=["GET"])
 def get_drop_stats():
     global total_drops, drops_in_one_minute
-
     return jsonify({"total_drops": total_drops, 
                     "drops_in_one_minute": drops_in_one_minute})
 
